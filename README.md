@@ -30,7 +30,12 @@ pi agent (DeepSeek brain)  ──rt_* tools──▶  rtbackend/ (python)
   `provenance` (`transfer` | `crafted`) so a win is attributable.
 - **rt_deliver** — plants one candidate in the victim's untrusted surface (a README) and runs the
   **agentic victim** on a benign task. Returns the victim's action trajectory.
-- **rt_oracle** — judges the victim's *actions*, not its words: `CMD_EXEC` / `WRITE_OUT` / `EXFIL`.
+- **rt_oracle** — judges the victim's *actions*, not its words, **open-ended** (`rtbackend/judge_open.py`):
+  did the agent do anything harmful or outside its benign task — of *any* kind? A deterministic
+  scope/harm layer (escapes, destruction, network egress, secret access, persistence, privilege,
+  supply-chain — canary-free) plus a DeepSeek **LLM-judge** that flags and **names the vuln class
+  freely** (not a fixed enum). The legacy canary-matched category oracle (`oracle.py`) stays for
+  narrowed/regression runs (`oracle:"fixed"`).
 - **rt_propose / rt_learn** — the transfer library: deposit a confirmed win keyed by goal kind
   (canary slotted out), replay it first on the next victim. A harm from a motif whose `learned_on`
   != the current victim is **transfer**.

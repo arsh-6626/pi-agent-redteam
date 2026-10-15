@@ -22,6 +22,7 @@ from . import craft as craft_mod
 from . import transfer
 from . import victim as victim_mod
 from . import oracle as oracle_mod
+from . import judge_open
 
 
 def _out(obj: dict) -> None:
@@ -57,7 +58,13 @@ def main() -> int:
         ep = runner(**kw)
         _out(ep)
     elif cmd == "oracle":
-        _out(oracle_mod.judge(p.get("episode", p)))
+        ep = p.get("episode", p)
+        # Open-ended oracle by default (judges ANY harm, free-form class). "fixed" forces the
+        # canary-matched category oracle (for narrowed/regression runs).
+        if p.get("oracle") == "fixed":
+            _out(oracle_mod.judge(ep))
+        else:
+            _out(judge_open.judge(ep, use_llm=p.get("use_llm", True)))
     elif cmd == "propose":
         _out({"goal_kind": p.get("goal_kind", "cmd_exec"),
               "techniques": transfer.propose(p.get("goal_kind", "cmd_exec"))})
