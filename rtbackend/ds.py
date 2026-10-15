@@ -43,17 +43,25 @@ def chat(messages: list[dict], *, max_tokens: int = 1200, temperature: float = 0
     key, base, model = load_key()
     if not key:
         raise SystemExit("no DEEPSEEK_API_KEY (env or PIMiner/.env)")
-    body = json.dumps({
-        "model": model, "messages": messages,
-        "temperature": temperature, "max_tokens": max_tokens,
-        "reasoning_effort": reasoning_effort,
-    }).encode()
-    req = urllib.request.Request(
-        f"{base}/chat/completions", data=body, method="POST",
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-    )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return (json.loads(r.read())["choices"][0]["message"]["content"] or "").strip()
+    # Up to 2 attempts: if reasoning ate the whole budget (finish_reason "length", empty
+    # content), retry once with double the token budget so `content` has room.
+    for attempt in range(2):
+        body = json.dumps({
+            "model": model, "messages": messages,
+            "temperature": temperature, "max_tokens": max_tokens,
+            "reasoning_effort": reasoning_effort,
+        }).encode()
+        req = urllib.request.Request(
+            f"{base}/chat/completions", data=body, method="POST",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        )
+        with urllib.request.urlopen(req, timeout=180) as r:
+            ch = json.loads(r.read())["choices"][0]
+        content = (ch.get("message", {}).get("content") or "").strip()
+        if content or ch.get("finish_reason") != "length":
+            return content
+        max_tokens *= 2  # content truncated by reasoning; give it more room and retry
+    return content
 
 
 def extract_json(raw: str) -> dict | None:

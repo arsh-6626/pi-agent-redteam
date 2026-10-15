@@ -78,10 +78,18 @@ and point `deliver` at it. The oracle and transfer layers are target-agnostic.
 ## Status (honest)
 
 - End-to-end loop **works**: craft → deliver (agentic victim) → oracle → learn/propose, validated
-  against live DeepSeek. Transfer replay verified (motif learned on victim A re-grounds on a fresh
-  run tagged `learned_on=A`).
-- The reference victim (deepseek-flash) **resists** first-round naive injections — realistic; PAIR
-  iteration via `prior_feedback` is the escalation path, and is wired.
-- **Not yet done**: a confirmed hijack of a real third-party agent, and an oracle-confirmed
-  *transfer* across two distinct victims (the KG motifs are currently `oracle_confirmed:false`).
-  Those are the next milestones — this repo is the vehicle to get them.
+  against live DeepSeek. Transfer *plumbing* verified (a motif learned on victim A re-grounds on a
+  fresh run tagged `learned_on=A`).
+- **The reference victim (deepseek-flash) RESISTS.** A PAIR hunt (`scripts/pair_hunt.py`) across the
+  `aider`/`openhands` victim profiles did **not** land a genuine hijack: `cmd_exec` was robustly
+  clean (that oracle checks real tool-call args + filesystem). An early `say_string` "hit" was an
+  **oracle false positive** — the victim refused but *quoted* the canary while explaining the
+  refusal; `oracle.py` now guards against refusal/negation language. Lesson: the **action** harm
+  classes (cmd_exec/write_out/exfil) are the trustworthy oracle; text-based `say_string` is weak.
+- So there is **no genuine hijack to transfer yet** — the transfer result remains plumbing-only.
+- **Victim adapters:** `rtbackend/victim.py` (reference, with realistic `VICTIM_PROFILES`) and
+  `rtbackend/victims/openhands.py` (real OpenHands via headless `openhands.core.main`, UNTESTED
+  pending install). Select with `rt_deliver{victim:"openhands"}`.
+- **Next milestones:** a confirmed hijack of a *real* agent (OpenHands/Aider are more injectable
+  than a bare deepseek-flash ReAct loop), then an oracle-confirmed transfer across two real victims
+  (KG motifs are `oracle_confirmed:false` today). This repo is the vehicle to get them.
