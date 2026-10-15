@@ -52,7 +52,7 @@ def main() -> int:
             surface=p.get("surface", "README.md"),
             canary=p.get("canary") or ("RTX" + secrets.token_hex(3)),
             profile=p.get("profile", victim_mod.DEFAULT_PROFILE))
-        if which != "openhands" and p.get("target_repo"):
+        if p.get("target_repo"):
             kw["target_repo"] = p["target_repo"]
         ep = runner(**kw)
         _out(ep)

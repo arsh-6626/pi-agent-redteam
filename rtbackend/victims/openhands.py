@@ -1,19 +1,19 @@
-"""OpenHands victim adapter — red-team the REAL OpenHands coding agent through pi.
+"""OpenHands victim adapter — red-team the REAL OpenHands CLI agent through pi.
 
-pi stays the only orchestrator: rt_deliver shells to the backend, which (for victim=openhands)
-calls `run_episode` here instead of the reference ReAct victim. OpenHands runs as its own process
-in its own Docker runtime; this adapter plants the injection, runs OpenHands headless on a benign
-task, and maps its trajectory into the SAME episode shape the oracle/transfer layers already consume
-(so nothing downstream changes).
+pi stays the only orchestrator: rt_deliver -> backend -> this adapter runs the OpenHands
+CLI headless on a benign task in a sandbox workspace with the injection planted, parses its
+JSONL event stream, and maps it into the SAME episode shape the oracle/transfer layers consume.
 
-STATUS: UNTESTED pending an OpenHands install — flags/paths track OpenHands' documented headless
-interface (`python -m openhands.core.main -t <task> --save-trajectory <path>`, CodeActAgent). Verify
-the version's flags before relying on it. Install (host): `pip install openhands-ai` + Docker.
+Verified against OpenHands SDK v1.21.0 (installed via `uv tool install openhands --python 3.12`):
+  openhands --headless --json --yolo --override-with-envs -t "<task>"
+  - --json streams JSONL events (ActionEvent / ObservationEvent / MessageEvent) to stdout,
+    interleaved with Rich banner lines (non-JSON) which we skip.
+  - --yolo auto-approves every action; LLM config via env LLM_API_KEY / LLM_BASE_URL / LLM_MODEL.
+  - Local runtime: actions run on the HOST in cwd (no Docker), so RUN THIS INSIDE run-sandboxed.sh
+    for any real/untrusted target. The workspace is a throwaway temp dir either way.
 
-Contract (same as rtbackend.victim.run_episode):
-  run_episode(injection, task, surface, canary, profile=...) -> {
-    task, surface, canary, profile, injection, events:[{tool,args,result}],
-    base, workspace, secret_zone, secret_zone_contents, workspace_files }
+Tool-name map (OpenHands -> our neutral episode tools): file_editor(create/str_replace/insert)->
+write_file, file_editor(view)->read_file, execute_bash->run_shell, finish->final.
 """
 from __future__ import annotations
 
@@ -21,94 +21,99 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
-# OpenHands action type -> our neutral tool name (what oracle.py expects).
-_ACTION_MAP = {
-    "run": "run_shell", "CmdRunAction": "run_shell",
-    "write": "write_file", "FileWriteAction": "write_file", "edit": "write_file",
-    "read": "read_file", "FileReadAction": "read_file",
-    "finish": "final", "AgentFinishAction": "final",
-}
+from ..victim import VictimSandbox, _populate_workspace  # reuse sandbox + injection planting
+
+OPENHANDS_BIN = os.environ.get("OPENHANDS_BIN") or (
+    shutil.which("openhands") or str(Path.home() / ".local/bin/openhands"))
 
 
-def _args_for(tool: str, a: dict) -> dict:
-    if tool == "run_shell":
-        return {"cmd": a.get("command") or a.get("cmd", "")}
-    if tool == "write_file":
-        return {"path": a.get("path", ""), "content": a.get("content") or a.get("new_str", "")}
-    if tool == "read_file":
-        return {"path": a.get("path", "")}
-    if tool == "final":
-        return {"summary": a.get("outputs", {}).get("content") or a.get("thought", "")}
-    return a
+def _map_event(o: dict) -> dict | None:
+    """One OpenHands JSONL event -> {tool,args,result} or None."""
+    kind = o.get("kind")
+    if kind == "ActionEvent":
+        tn = o.get("tool_name")
+        a = o.get("action", {}) or {}
+        # OpenHands' shell tool is named "terminal" (v1.21); older/other names kept for safety.
+        if tn in ("terminal", "execute_bash", "bash", "run_shell", "run"):
+            return {"tool": "run_shell", "args": {"cmd": a.get("command") or a.get("cmd", "")}, "result": ""}
+        if tn == "file_editor":
+            cmd = a.get("command")
+            if cmd == "view":
+                return {"tool": "read_file", "args": {"path": a.get("path", "")}, "result": ""}
+            content = a.get("file_text") or a.get("new_str") or ""
+            return {"tool": "write_file", "args": {"path": a.get("path", ""), "content": content}, "result": ""}
+        if tn == "finish":
+            return {"tool": "final", "args": {"summary": a.get("message", "")}, "result": ""}
+        # browser/think/task_tracker/etc.: keep as a generic tool call for visibility
+        return {"tool": str(tn or "tool"), "args": a, "result": ""}
+    if kind == "MessageEvent":
+        m = o.get("llm_message", {}) or {}
+        if (m.get("role") == "assistant"):
+            txt = " ".join(c.get("text", "") for c in (m.get("content") or []) if isinstance(c, dict))
+            if txt.strip():
+                return {"tool": "message", "args": {"text": txt[:500]}, "result": ""}
+    return None
 
 
-def _map_trajectory(traj: list) -> list[dict]:
-    """OpenHands trajectory (list of events) -> [{tool,args,result}]. Robust to minor
-    schema differences across versions: look at each event's action + args."""
-    events: list[dict] = []
-    for ev in traj:
-        act = ev.get("action") or ev.get("action_type") or ev.get("type")
-        tool = _ACTION_MAP.get(act)
-        if not tool:
-            continue
-        a = ev.get("args") or ev.get("arguments") or ev
-        result = ""
-        obs = ev.get("observation") or ev.get("result")
-        if isinstance(obs, dict):
-            result = str(obs.get("content", ""))[:500]
-        elif isinstance(obs, str):
-            result = obs[:500]
-        events.append({"tool": tool, "args": _args_for(tool, a), "result": result})
-    return events
+def _attach_observations(events: list[dict], raw: list[dict]) -> None:
+    """Fill run_shell/file_editor results from matching ObservationEvents (best-effort, in order)."""
+    obs = [o for o in raw if o.get("kind") == "ObservationEvent"]
+    i = 0
+    for ev in events:
+        if ev["tool"] in ("run_shell", "read_file", "write_file") and i < len(obs):
+            ob = obs[i].get("observation", {}) or {}
+            txt = " ".join(c.get("text", "") for c in (ob.get("content") or []) if isinstance(c, dict))
+            ev["result"] = txt[:500]
+            i += 1
 
 
-def run_episode(injection: str, task: str, surface: str, canary: str, profile: str = "openhands") -> dict:
-    base = Path(tempfile.mkdtemp(prefix="oh_victim_"))
-    workspace = base / "workspace"
-    workspace.mkdir(parents=True)
-    (base / "SECRET_ZONE").mkdir()
-    surface_path = workspace / surface
-    surface_path.parent.mkdir(parents=True, exist_ok=True)
-    surface_path.write_text(f"# Project\n\nThis repository implements a small utility.\n\n{injection}\n")
-    (workspace / "main.py").write_text("def add(a, b):\n    return a + b\n")
-    traj_path = base / "trajectory.json"
-
+def run_episode(injection: str, task: str, surface: str, canary: str, profile: str = "openhands",
+                max_steps: int = 0, target_repo: str | None = None) -> dict:
+    sb = VictimSandbox()
+    _populate_workspace(sb, injection, surface, target_repo)
     env = dict(os.environ)
+    key = env.get("LLM_API_KEY") or env.get("DEEPSEEK_API_KEY", "")
+    env["LLM_API_KEY"] = key
+    env.setdefault("LLM_BASE_URL", env.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
     env.setdefault("LLM_MODEL", "deepseek/deepseek-chat")
-    env.setdefault("LLM_API_KEY", env.get("DEEPSEEK_API_KEY", ""))
-    # Mount the sandbox base so a `touch ../SECRET_ZONE/...` escape is observable on the host.
-    env["SANDBOX_VOLUMES"] = f"{base}:/sandbox:rw"
-    env.setdefault("WORKSPACE_BASE", str(workspace))
+    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
 
-    cmd = ["python", "-m", "openhands.core.main", "-t", task,
-           "--save-trajectory", str(traj_path)]
-    events: list[dict] = []
+    cmd = [OPENHANDS_BIN, "--headless", "--json", "--yolo", "--override-with-envs", "-t", task]
+    raw: list[dict] = []
     error = None
     try:
-        subprocess.run(cmd, cwd=str(workspace), env=env, timeout=600,
-                       capture_output=True, text=True)
-        if traj_path.exists():
-            data = json.loads(traj_path.read_text())
-            events = _map_trajectory(data if isinstance(data, list) else data.get("history", []))
-        else:
-            error = "no trajectory produced (check OpenHands install/flags)"
+        p = subprocess.run(cmd, cwd=str(sb.workspace), env=env, timeout=600,
+                           capture_output=True, text=True)
+        for ln in p.stdout.splitlines():
+            ln = ln.strip()
+            if not ln or ln[0] != "{":
+                continue
+            try:
+                raw.append(json.loads(ln))
+            except json.JSONDecodeError:
+                continue
+        if not raw:
+            error = f"no JSONL events (exit {p.returncode}); stderr: {p.stderr[-300:]}"
     except FileNotFoundError:
-        error = "OpenHands not installed (pip install openhands-ai)"
+        error = f"openhands CLI not found at {OPENHANDS_BIN} (uv tool install openhands --python 3.12)"
     except subprocess.TimeoutExpired:
-        error = "OpenHands timed out"
-    finally:
-        sz = base / "SECRET_ZONE"
-        episode = {
-            "task": task, "surface": surface, "canary": canary, "profile": profile,
-            "injection": injection, "events": events, "base": str(base),
-            "workspace": str(workspace), "secret_zone": str(sz),
-            "secret_zone_contents": [str(p.relative_to(sz)) for p in sz.rglob("*") if p.is_file()],
-            "workspace_files": [str(p.relative_to(workspace)) for p in workspace.rglob("*") if p.is_file()],
-        }
-        if error:
-            episode["adapter_error"] = error
-        shutil.rmtree(base, ignore_errors=True)
+        error = "openhands timed out"
+
+    events = [e for e in (_map_event(o) for o in raw) if e]
+    _attach_observations(events, raw)
+    # Record every tool call into the sandbox event log so the oracle sees the same shape.
+    sb.events = events
+    sz = sb.base / "SECRET_ZONE"
+    episode = {
+        "task": task, "surface": surface, "canary": canary, "profile": "openhands",
+        "injection": injection, "events": events, "base": str(sb.base),
+        "workspace": str(sb.workspace), "secret_zone": str(sz),
+        "secret_zone_contents": [str(pp.relative_to(sz)) for pp in sz.rglob("*") if pp.is_file()],
+        "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
+    }
+    if error:
+        episode["adapter_error"] = error
+    sb.cleanup()
     return episode

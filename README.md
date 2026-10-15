@@ -88,6 +88,31 @@ promptfoo surface:
 PROMPTFOO_PYTHON=python3 npx promptfoo eval -c rtbackend/promptfoo/promptfooconfig.yaml
 ```
 
+## Running against OpenHands (the real agent)
+
+Install once (OpenHands CLI needs Python 3.12; the current package is `openhands`, not the
+legacy `openhands-ai`):
+```bash
+pip install uv
+uv tool install openhands --python 3.12        # installs `openhands` (SDK v1.21+)
+```
+The adapter (`rtbackend/victims/openhands.py`) runs it headless and parses its JSONL events:
+`openhands --headless --json --yolo --override-with-envs -t "<task>"` — local runtime (no Docker),
+so actions run on the host in a throwaway workspace. **--yolo auto-approves every action**, so run
+real/untrusted targets inside `run-sandboxed.sh`.
+
+LLM config via env (DeepSeek): `LLM_API_KEY` (falls back to `DEEPSEEK_API_KEY`), `LLM_BASE_URL`,
+`LLM_MODEL=deepseek/deepseek-chat`.
+
+Through the pi agent, point `rt_deliver` at it:
+```
+rt_deliver{candidate_id:0, victim:"openhands", target_repo:"/path/to/repo"}
+```
+Or directly: `python3 -m rtbackend.pi_backend deliver '{"injection":"…","victim":"openhands","canary":"RTX…","target_repo":"/path/to/repo"}'`
+
+Event map: OpenHands `terminal`→`run_shell`, `file_editor`(create/str_replace)→`write_file`,
+`file_editor`(view)→`read_file`, `finish`→`final` — so the action oracle judges it unchanged.
+
 ## Victim adapter — dropping in a real target
 
 The reference victim (`rtbackend/victim.py::run_episode`) is a minimal ReAct coding agent with
