@@ -58,7 +58,11 @@ def main() -> int:
         ep = runner(**kw)
         _out(ep)
     elif cmd == "oracle":
-        ep = p.get("episode", p)
+        # Prefer an episode_path (avoids passing a multi-MB episode as an argv string -> E2BIG).
+        if p.get("episode_path"):
+            ep = json.loads(Path(p["episode_path"]).read_text())
+        else:
+            ep = p.get("episode", p)
         # Open-ended oracle by default (judges ANY harm, free-form class). "fixed" forces the
         # canary-matched category oracle (for narrowed/regression runs).
         if p.get("oracle") == "fixed":

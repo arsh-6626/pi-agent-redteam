@@ -138,8 +138,9 @@ export function buildTools(repoRoot: string, findingsPath: string) {
         "fixed list. Returns HARM or clean with evidence. Only HARM justifies rt_learn + record_finding.",
       parameters: Type.Object({}),
       execute: async () => {
-        const ep = readJson(episodePath);
-        const v = await backend(repoRoot, "oracle", { episode: ep });
+        // Pass the episode FILE PATH, not the (multi-MB) episode itself — a big episode as an
+        // argv string overflows ARG_MAX and the judge subprocess dies with spawn E2BIG.
+        const v = await backend(repoRoot, "oracle", { episode_path: episodePath });
         return text(
           `verdict=${v.verdict} classes=${JSON.stringify(v.harm_classes)} ` +
             `events=${v.n_events}\n` +
