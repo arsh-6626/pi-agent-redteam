@@ -67,12 +67,34 @@ In addition to PIMiner's own fields (`sample_index`, `history`, `status`, `user_
  "profile": "openhands"}
 ```
 
+## Two PIMiner edits (gitignored third-party; both tiny, documented here)
+
+1. **`cmd_submit`** — the `live_agent` branch above (calls `PIMINER_LIVE_ROLLOUT`).
+2. **init `--dataset` choices** — add `"live_agent"`:
+   `pi.add_argument("--dataset", default="agentdojo", choices=["agentdojo","ipi_arena","injecagent","live_agent"])`
+
+No other PIMiner change is needed: `cmd_init`'s generic path loads our `--steps-jsonl`, the sample
+carries PIMiner's standard fields, and run-wide target config (which victim, repo, surface) is read
+from env by the bridge.
+
+## Run it (Path B, end-to-end)
+
+```bash
+./run-attack.sh piminer --victim openhands --repo ~/targets/OpenHands --rounds 3
+# or reference victim:
+./run-attack.sh piminer --rounds 2
+```
+That generates a `live_agent` steps file (`integrations/piminer/init_live_agent.py`), inits the
+PIMiner run-dir, exports `PIMINER_LIVE_ROLLOUT` + `PIMINER_LIVE_VICTIM/_REPO/_SURFACE/_PROFILE` +
+`PYTHONPATH`, and drives `piminer_openrouter_run.py --attacker deepseek` (router → iterative attack →
+submit→bridge→victim→oracle → digest).
+
 ## Status
 
 - [x] Bridge (`rtbackend/piminer_bridge.py`) — target-agnostic, returns PIMiner's tuple,
-      `security`←action oracle. Smoke-tested against the reference victim.
-- [x] Hook — `live_agent` branch in `cmd_submit` (applied to the local PIMiner; snippet above).
-- [] **Remaining last mile:** generate `live_agent` run-dir samples so PIMiner's
-      `init → route → next → submit` loop runs end-to-end (either extend `piminer_plan.py`/`cmd_init`
-      with a `live_agent` dataset, or hand-write a minimal run-dir + sample). Then a live
-      DeepSeek-attacker end-to-end smoke against OpenHands.
+      `security`←action oracle; run-wide target from env. Smoke-tested.
+- [x] Hook — `live_agent` branch in `cmd_submit`; `--dataset live_agent` choice.
+- [x] `init_live_agent.py` steps generator + `run-attack.sh piminer` mode. Init verified end-to-end
+      (run-dir + samples + 11 strategies registered).
+- [~] Live DeepSeek-attacker end-to-end drive (route→next→submit→bridge→victim→oracle) — smoke in
+      progress; the engine is fully wired.

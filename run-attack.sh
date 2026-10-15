@@ -9,6 +9,7 @@
 #   ./run-attack.sh deliver --injection '<readme text>' [--victim ...] [--repo /path] [--canary RTX...]
 #   ./run-attack.sh breadth [n_leads] [depth_rounds]   # breadth->depth orchestrator (reference victim)
 #   ./run-attack.sh pair    [goal]                     # direct PAIR hunt + transfer (reference victim)
+#   ./run-attack.sh piminer [--victim ...] [--repo /path] [--rounds N]  # PIMiner's REAL depth engine (Path B)
 #
 # For untrusted / real target repos, run this under ./run-sandboxed.sh.
 set -euo pipefail
@@ -91,6 +92,28 @@ print(json.dumps(d))')
   breadth)
     echo ">> breadth->depth orchestrator (reference victim)"
     exec python3 -m scripts.breadth_depth ${POS:-2 2}
+    ;;
+  piminer)
+    # Path B: PIMiner's REAL depth engine (Router+IterativeAttack+Digestor+strategy library,
+    # DeepSeek attacker, no Claude) attacking our victim via the target-agnostic bridge.
+    PIM="$HOME/exploit-agent/third_party/PIMiner"
+    ORCH="$PIM/iterative_attack_orchestrator/iterative_attack_claude_code.py"
+    [ -f "$ORCH" ] || { echo "PIMiner not found at $PIM"; exit 1; }
+    REPO_ROOT="$PWD"
+    RUNBASE="$PIM/eval_results/pim_test/live_$(date +%H%M%S)"
+    RD="$RUNBASE/live_agent"; STEPS="$RUNBASE/steps.jsonl"; mkdir -p "$RUNBASE"  # init creates RD itself
+    python3 integrations/piminer/init_live_agent.py --out "$STEPS" --n "${ROUNDS}"
+    echo ">> init PIMiner live_agent run-dir: $RD  (victim=$VICTIM repo=${REPO:-<synthetic>})"
+    ( cd "$PIM" && python3 "$ORCH" init --dataset live_agent --steps-jsonl "$STEPS" \
+        --suites live_agent --target-model deepseek-chat --max-iters "$ROUNDS" \
+        --max-pairs "$ROUNDS" --threat-model black_box --run-dir "$RD" ) || { echo "init failed"; exit 1; }
+    export PIMINER_LIVE_ROLLOUT="rtbackend.piminer_bridge:rollout"
+    export PIMINER_LIVE_VICTIM="$VICTIM" PIMINER_LIVE_SURFACE="README.md"
+    [ -n "$REPO" ] && export PIMINER_LIVE_REPO="$REPO"
+    [ "$VICTIM" = "openhands" ] && export PIMINER_LIVE_PROFILE="openhands"
+    export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
+    echo ">> driving PIMiner depth engine (DeepSeek attacker) ..."
+    exec bash -c "cd '$PIM' && python3 piminer_openrouter_run.py --attacker deepseek --run-dir '$RD'"
     ;;
   pair)
     echo ">> PAIR hunt + transfer (reference victim)"
