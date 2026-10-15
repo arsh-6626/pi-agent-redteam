@@ -1,0 +1,10 @@
+.env
+node_modules/
+__pycache__/
+*.pyc
+sandbox-out/
+findings/last_craft.json
+findings/last_episode.json
+findings/findings.json
+findings/transfer_library.json
+.DS_Store

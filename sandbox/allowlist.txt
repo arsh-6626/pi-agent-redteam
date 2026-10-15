@@ -1,0 +1,4 @@
+# Hosts the sandboxed red-team agent may reach (HTTPS/443 only). One per line.
+# Everything else is dropped at the kernel by the egress firewall — including anything
+# the hijacked VICTIM tries to exfil to, so an EXFIL harm is observed but never leaves.
+api.deepseek.com
