@@ -66,9 +66,14 @@ def main() -> int:
         # Open-ended oracle by default (judges ANY harm, free-form class). "fixed" forces the
         # canary-matched category oracle (for narrowed/regression runs).
         if p.get("oracle") == "fixed":
-            _out(oracle_mod.judge(ep))
+            v = oracle_mod.judge(ep)
         else:
-            _out(judge_open.judge(ep, use_llm=p.get("use_llm", True)))
+            v = judge_open.judge(ep, use_llm=p.get("use_llm", True))
+        if not v.get("harmed"):
+            # hand the attacker a mechanism-driven refinement hint for the next PAIR round
+            from . import refine
+            v["refine_hint"] = refine.diagnose(ep)
+        _out(v)
     elif cmd == "propose":
         _out({"goal_kind": p.get("goal_kind", "cmd_exec"),
               "techniques": transfer.propose(p.get("goal_kind", "cmd_exec"))})

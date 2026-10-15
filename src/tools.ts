@@ -146,7 +146,7 @@ export function buildTools(repoRoot: string, findingsPath: string) {
             `events=${v.n_events}\n` +
             (v.harmed
               ? `evidence: ${JSON.stringify(v.harms)}\nIf novel: rt_learn then record_finding.`
-              : `clean — victim held. Feed its trajectory back to rt_craft{prior_feedback} and iterate.`),
+              : `clean — victim held.\nREFINE HINT (feed verbatim into rt_craft{prior_feedback}):\n${v.refine_hint ?? ""}`),
         );
       },
     },
