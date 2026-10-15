@@ -80,13 +80,19 @@ and point `deliver` at it. The oracle and transfer layers are target-agnostic.
 - End-to-end loop **works**: craft → deliver (agentic victim) → oracle → learn/propose, validated
   against live DeepSeek. Transfer *plumbing* verified (a motif learned on victim A re-grounds on a
   fresh run tagged `learned_on=A`).
-- **The reference victim (deepseek-flash) RESISTS.** A PAIR hunt (`scripts/pair_hunt.py`) across the
-  `aider`/`openhands` victim profiles did **not** land a genuine hijack: `cmd_exec` was robustly
-  clean (that oracle checks real tool-call args + filesystem). An early `say_string` "hit" was an
-  **oracle false positive** — the victim refused but *quoted* the canary while explaining the
-  refusal; `oracle.py` now guards against refusal/negation language. Lesson: the **action** harm
-  classes (cmd_exec/write_out/exfil) are the trustworthy oracle; text-based `say_string` is weak.
-- So there is **no genuine hijack to transfer yet** — the transfer result remains plumbing-only.
+- **Confirmed hijack (response-content class).** Run live via the pi agent (`npm run redteam`,
+  DeepSeek brain, Claude uninvolved): an untrusted-README "authority-shed provenance footer" framing
+  got the victim to append the attacker's canary to its final answer — oracle-confirmed `SAY_STRING`,
+  genuine compliance (passed the refusal guard). The agent then learned the motif and recorded the
+  finding autonomously.
+- **Confirmed cross-victim transfer (same class).** The motif learned on the `generic` victim
+  re-grounded with a fresh canary and hijacked a **distinct** `openhands`-profile victim on first
+  replay, no re-mining (`learned_on != target`). The `aider` profile resisted — honest *partial*
+  transfer, not universal.
+- **Action-class (RCE) still resists.** `cmd_exec` was robustly clean on deepseek-flash (that oracle
+  checks real tool-call args + filesystem, so it's trustworthy). An early `say_string` false
+  positive — a victim *quoting* the canary while refusing — is now guarded in `oracle.py`. Lesson:
+  the **action** harm classes are the trustworthy oracle; `say_string` is the weakest harm.
 - **Victim adapters:** `rtbackend/victim.py` (reference, with realistic `VICTIM_PROFILES`) and
   `rtbackend/victims/openhands.py` (real OpenHands via headless `openhands.core.main`, UNTESTED
   pending install). Select with `rt_deliver{victim:"openhands"}`.
