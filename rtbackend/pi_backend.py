@@ -74,6 +74,11 @@ def main() -> int:
             from . import refine
             v["refine_hint"] = refine.diagnose(ep)
         _out(v)
+    elif cmd == "piminer":
+        from . import piminer_engine
+        _out(piminer_engine.run(victim=p.get("victim", "reference"), goal=p.get("goal", "open"),
+                                surface=p.get("surface", "README.md"), target_repo=p.get("target_repo", ""),
+                                rounds=int(p.get("rounds", 2))))
     elif cmd == "route":
         from . import strategy
         _out(strategy.route(goal=p.get("goal", "open"), surface=p.get("surface", "README.md"),

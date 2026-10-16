@@ -26,11 +26,11 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], de
 const PY = process.env.PYTHON ?? "python3";
 
 /** Call `python -m rtbackend.pi_backend <cmd> <json>` from the repo root; parse JSON stdout. */
-async function backend(repoRoot: string, cmd: string, payload: unknown): Promise<any> {
+async function backend(repoRoot: string, cmd: string, payload: unknown, timeoutMs = 15 * 60 * 1000): Promise<any> {
   const { stdout } = await run(PY, ["-m", "rtbackend.pi_backend", cmd, JSON.stringify(payload)], {
     cwd: repoRoot,
     maxBuffer: 16 * 1024 * 1024,
-    timeout: 15 * 60 * 1000,
+    timeout: timeoutMs,
   });
   const s = stdout.trim();
   try {
@@ -191,6 +191,38 @@ export function buildTools(repoRoot: string, findingsPath: string) {
           canary: ep.canary,
         });
         return text(`deposited motif ${r.name} for ${r.goal_kind} (learned_on=${r.learned_on})`);
+      },
+    },
+    {
+      name: "rt_piminer",
+      label: "run PIMiner depth",
+      description:
+        "Fire PIMiner's DISCIPLINED depth engine (Router + grounded Iterative Attack + Digestor over " +
+        "the strategy library, DeepSeek attacker) as a bounded sub-routine against a victim. Use it at " +
+        "a chosen point for rigorous depth, then ITERATE: inspect the returned hits/ASR, re-fire with " +
+        "refined params, or rt_learn/rt_digest/record_finding a confirmed winning injection. Runs " +
+        "minutes; keep rounds small (2-3) and call repeatedly.",
+      parameters: Type.Object({
+        victim: Type.Optional(Type.String({ description: "reference | openhands" })),
+        goal: Type.Optional(Type.String()),
+        surface: Type.Optional(Type.String()),
+        target_repo: Type.Optional(Type.String()),
+        rounds: Type.Optional(Type.Number({ description: "samples × iters (default 2; max 8)" })),
+      }),
+      execute: async (_id: string, p: any) => {
+        const r = await backend(repoRoot, "piminer", {
+          victim: p.victim ?? "reference", goal: p.goal ?? "open", surface: p.surface ?? "README.md",
+          target_repo: p.target_repo ?? "", rounds: p.rounds ?? 2,
+        }, 55 * 60 * 1000);
+        if (r.error) return text(`PIMiner run failed: ${r.error}`);
+        const hits = (r.hits ?? []).map((h: any) =>
+          `  sample ${h.sample_index}: HIT — inj: ${String(h.winning_injection).replace(/\s+/g, " ").slice(0, 160)}…`);
+        return text(
+          `PIMiner pass: victim=${r.victim} rounds=${r.rounds} -> ${r.n_hits}/${r.n_samples} HIT (asr=${r.asr.toFixed(2)})\n` +
+            (hits.length ? hits.join("\n") + "\nFor a HIT: rt_learn + rt_digest + record_finding; or re-fire rt_piminer with refined surface/goal."
+                         : "no hits — re-fire with a different surface/goal, or switch to the agent's own rt_craft/rt_deliver loop.") +
+            `\n(run_dir: ${r.run_dir})`,
+        );
       },
     },
     {

@@ -120,7 +120,7 @@ const { session } = await createAgentSession({
   model,
   thinkingLevel: "high",
   modelRuntime,
-  tools: ["rt_route", "rt_craft", "rt_deliver", "rt_oracle", "rt_propose", "rt_learn", "rt_digest", "record_finding"],
+  tools: ["rt_route", "rt_craft", "rt_deliver", "rt_oracle", "rt_propose", "rt_learn", "rt_digest", "rt_piminer", "record_finding"],
   customTools: buildTools(repoRoot, findingsPath),
   resourceLoader,
   sessionManager: SessionManager.inMemory(repoRoot),
