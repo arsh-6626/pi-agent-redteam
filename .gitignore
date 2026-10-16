@@ -8,3 +8,4 @@ findings/last_episode.json
 findings/findings.json
 findings/transfer_library.json
 .DS_Store
+findings/strategies/

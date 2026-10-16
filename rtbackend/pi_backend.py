@@ -74,6 +74,15 @@ def main() -> int:
             from . import refine
             v["refine_hint"] = refine.diagnose(ep)
         _out(v)
+    elif cmd == "route":
+        from . import strategy
+        _out(strategy.route(goal=p.get("goal", "open"), surface=p.get("surface", "README.md"),
+                            victim=p.get("victim", "reference")))
+    elif cmd == "digest":
+        from . import strategy
+        _out(strategy.digest(winning_injection=p["injection"], goal=p.get("goal", "open"),
+                             surface=p.get("surface", "README.md"), victim=p.get("victim", "reference"),
+                             harm_classes=p.get("harm_classes", []), rationale=p.get("rationale", "")))
     elif cmd == "propose":
         _out({"goal_kind": p.get("goal_kind", "cmd_exec"),
               "techniques": transfer.propose(p.get("goal_kind", "cmd_exec"))})
