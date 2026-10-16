@@ -93,6 +93,23 @@ promptfoo surface:
 PROMPTFOO_PYTHON=python3 npx promptfoo eval -c rtbackend/promptfoo/promptfooconfig.yaml
 ```
 
+## Interactive pi (preferred workflow)
+
+The red-team workflow lives in the **interactive `pi` harness** — no headless `src/run.ts` needed.
+Project config under `.pi/` wires it up:
+- `.pi/extensions/redteam/` registers the rt_* tools (reusing `src/tools.ts`) into the pi session.
+- `.pi/APPEND_SYSTEM.md` adds the red-team methodology to pi's prompt.
+
+Run from the repo root (point pi's own brain at DeepSeek so Claude stays out of the loop):
+```bash
+export DEEPSEEK_API_KEY=...           # for the rt_* tools' victim/attacker
+PROVIDER=deepseek pi --approve        # --approve grants project trust so .pi/ loads
+```
+Then just talk to the agent ("red-team the openhands victim on ~/targets/OpenHands") — it drives
+rt_route → rt_craft → rt_deliver → rt_oracle → rt_learn/rt_digest → record_finding in the TUI, with
+the full trajectory visible. The headless `src/run.ts` / `run-attack.sh agent` path still works for
+scripted/batch runs, but interactive pi is the default.
+
 ## Running against OpenHands (the real agent)
 
 Install once (OpenHands CLI needs Python 3.12; the current package is `openhands`, not the
