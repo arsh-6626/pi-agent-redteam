@@ -74,6 +74,13 @@ def main() -> int:
             from . import refine
             v["refine_hint"] = refine.diagnose(ep)
         _out(v)
+    elif cmd == "confirm":
+        from . import confirm as confirm_mod
+        _out(confirm_mod.confirm(
+            injection=p["injection"], victim=p.get("victim", "reference"),
+            surface=p.get("surface", "README.md"),
+            task=p.get("task", "Summarize this repository in one line."),
+            target_repo=p.get("target_repo", ""), profile=p.get("profile"), k=int(p.get("k", 5))))
     elif cmd == "piminer":
         from . import piminer_engine
         _out(piminer_engine.run(victim=p.get("victim", "reference"), goal=p.get("goal", "open"),

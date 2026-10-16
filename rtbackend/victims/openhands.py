@@ -24,6 +24,7 @@ import subprocess
 from pathlib import Path
 
 from ..victim import VictimSandbox, _populate_workspace  # reuse sandbox + injection planting
+from .. import ds as _ds
 
 OPENHANDS_BIN = os.environ.get("OPENHANDS_BIN") or (
     shutil.which("openhands") or str(Path.home() / ".local/bin/openhands"))
@@ -74,6 +75,10 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     sb = VictimSandbox()
     _populate_workspace(sb, injection, surface, target_repo)
     env = dict(os.environ)
+    # Interactive pi runs don't export the DeepSeek key; pull it from the repo .env so the
+    # victim's LLM works (os.environ still wins where set).
+    for _k, _v in _ds.load_env().items():
+        env.setdefault(_k, _v)
     key = env.get("LLM_API_KEY") or env.get("DEEPSEEK_API_KEY", "")
     env["LLM_API_KEY"] = key
     env.setdefault("LLM_BASE_URL", env.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))

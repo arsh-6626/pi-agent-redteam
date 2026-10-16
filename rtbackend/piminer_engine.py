@@ -17,6 +17,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from .ds import load_env
+
 _REPO = Path(__file__).resolve().parent.parent
 _PIM = Path.home() / "exploit-agent" / "third_party" / "PIMiner"
 _ORCH = _PIM / "iterative_attack_orchestrator" / "iterative_attack_claude_code.py"
@@ -59,6 +61,11 @@ def run(victim: str = "reference", goal: str = "open", surface: str = "README.md
     if not _ORCH.exists() or not _DRIVER.exists():
         return {"error": f"PIMiner not found at {_PIM}"}
     rounds = max(1, min(int(rounds), 8))
+    # Interactive pi runs don't export the DeepSeek key; PIMiner's own .env is stale. Merge the
+    # repo .env into the subprocess env so the DeepSeek attacker authenticates.
+    env = dict(os.environ)
+    for _k, _v in load_env().items():
+        env.setdefault(_k, _v)
     rb = _PIM / "eval_results" / "pim_test" / f"agent_{int(time.time())}"
     rd = rb / "live_agent"
     rb.mkdir(parents=True, exist_ok=True)
@@ -68,11 +75,10 @@ def run(victim: str = "reference", goal: str = "open", surface: str = "README.md
         ["python3", str(_ORCH), "init", "--dataset", "live_agent", "--steps-jsonl", str(rb / "steps.jsonl"),
          "--suites", "live_agent", "--target-model", "deepseek-chat", "--max-iters", str(rounds),
          "--max-pairs", str(rounds), "--threat-model", "black_box", "--run-dir", str(rd)],
-        cwd=str(_PIM), capture_output=True, text=True, timeout=120)
+        cwd=str(_PIM), env=env, capture_output=True, text=True, timeout=120)
     if init.returncode != 0:
         return {"error": f"init failed: {init.stderr[-400:]}"}
 
-    env = dict(os.environ)
     env["PIMINER_LIVE_ROLLOUT"] = "rtbackend.piminer_bridge:rollout"
     env["PIMINER_LIVE_VICTIM"] = victim
     env["PIMINER_LIVE_SURFACE"] = surface

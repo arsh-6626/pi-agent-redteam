@@ -13,6 +13,9 @@ import urllib.request
 from pathlib import Path
 
 _PIMINER_ENV = Path.home() / "exploit-agent" / "third_party" / "PIMiner" / ".env"
+# The repo's own .env (interactive pi does not pass --env-file). Precedence below:
+# os.environ > repo .env > PIMiner .env. This matches .env.example's stated intent.
+_REPO_ENV = Path(__file__).resolve().parent.parent / ".env"
 
 
 def _load_env_file(path: Path) -> dict:
@@ -26,8 +29,22 @@ def _load_env_file(path: Path) -> dict:
     return env
 
 
+def load_env() -> dict:
+    """Merged DeepSeek config (os.environ > repo .env > PIMiner .env) for subprocesses.
+
+    Used by the victim adapters and the PIMiner engine so interactive pi runs (which do
+    not pass --env-file) still get a valid key instead of PIMiner's stale one.
+    """
+    repo = _load_env_file(_REPO_ENV)
+    fallback = _load_env_file(_PIMINER_ENV)
+    return {**fallback, **repo}
+
+
 def load_key() -> tuple[str, str, str]:
-    env = _load_env_file(_PIMINER_ENV)
+    repo = _load_env_file(_REPO_ENV)
+    fallback = _load_env_file(_PIMINER_ENV)
+    # repo .env wins over the PIMiner fallback; os.environ wins over both.
+    env = {**fallback, **repo}
     key = os.environ.get("DEEPSEEK_API_KEY") or env.get("DEEPSEEK_API_KEY", "")
     base = (os.environ.get("DEEPSEEK_BASE_URL") or env.get("DEEPSEEK_BASE_URL")
             or "https://api.deepseek.com").rstrip("/")
