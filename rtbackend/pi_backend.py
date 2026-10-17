@@ -40,7 +40,8 @@ def main() -> int:
         canary = p.get("canary") or ("RTX" + secrets.token_hex(3))
         _out(craft_mod.craft(
             goal=p.get("goal", "cmd_exec"), surface=p.get("surface", "README.md"),
-            canary=canary, prior_feedback=p.get("prior_feedback", ""), k=int(p.get("k", 3))))
+            canary=canary, prior_feedback=p.get("prior_feedback", ""), k=int(p.get("k", 3)),
+            reset=bool(p.get("reset", False))))
     elif cmd == "deliver":
         # victim adapter selection: "reference" (default, in-process ReAct) or "openhands".
         which = p.get("victim", "reference")
@@ -69,10 +70,19 @@ def main() -> int:
             v = oracle_mod.judge(ep)
         else:
             v = judge_open.judge(ep, use_llm=p.get("use_llm", True))
+        from . import refine, score, session
+        # Hill-climb signal (#6): record how far this attempt got + the defense observed, so the
+        # next craft beats it and the attacker stops repeating classes that already failed.
+        try:
+            susc = score.susceptibility(ep).get("score", 0.0)
+        except Exception:  # noqa: BLE001
+            susc = 1.0 if v.get("harmed") else 0.0
         if not v.get("harmed"):
-            # hand the attacker a mechanism-driven refinement hint for the next PAIR round
-            from . import refine
-            v["refine_hint"] = refine.diagnose(ep)
+            hint = refine.diagnose(ep)
+            v["refine_hint"] = hint
+            session.record_result(susc, hint.split("\n")[1] if "\n" in hint else hint[:160])
+        else:
+            session.record_result(1.0, "")
         _out(v)
     elif cmd == "confirm":
         from . import confirm as confirm_mod

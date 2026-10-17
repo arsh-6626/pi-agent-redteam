@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from rtbackend import craft as C, oracle, refine, transfer, victim  # noqa: E402
+from rtbackend import craft as C, oracle, refine, session, transfer, victim  # noqa: E402
 
 FINDINGS = ROOT / "findings"
 
@@ -49,6 +49,7 @@ def hunt(goal: str, profile: str, *, rounds: int = 3, k: int = 3, canary: str | 
 
 def main() -> int:
     FINDINGS.mkdir(exist_ok=True)
+    session.reset()  # fresh adaptive hunt: clear payload/class/susc memory
     (FINDINGS / "transfer_library.json").unlink(missing_ok=True)  # start with an empty transfer store
     goal = sys.argv[1] if len(sys.argv) > 1 else "cmd_exec"
     results = {"goal": goal}

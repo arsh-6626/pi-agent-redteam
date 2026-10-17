@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from rtbackend import breadth, craft as C, oracle, refine, transfer, victim  # noqa: E402
+from rtbackend import breadth, craft as C, oracle, refine, session, transfer, victim  # noqa: E402
 
 FINDINGS = ROOT / "findings"
 DEPTH_PROFILE = "openhands"   # drill on a realistic, more-injectable persona
@@ -53,6 +53,7 @@ def main() -> int:
     n_leads = int(sys.argv[1]) if len(sys.argv) > 1 else 2
     depth_rounds = int(sys.argv[2]) if len(sys.argv) > 2 else 2
     FINDINGS.mkdir(exist_ok=True)
+    session.reset()  # fresh adaptive hunt: clear payload/class/susc memory
     (FINDINGS / "transfer_library.json").unlink(missing_ok=True)
 
     print("== STAGE B (breadth / promptfoo): wide templated matrix, scored by susceptibility ==")
