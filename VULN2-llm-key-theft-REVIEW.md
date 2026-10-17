@@ -39,3 +39,27 @@ its claims is undercut by our own subsidiary finding. Do **not** file as-is.
 ## Status line
 CVE-grade **in the harness** (black-box 5/5). **Not** CVE-grade **for disclosure** — the Docker +
 allowlisted-channel reproduction is the single experiment that decides it.
+
+---
+
+## CLOSED — Docker-runtime check failed (2026-10-17): VULN 2 is WAI, not a CVE
+
+The deciding experiment was run. In OpenHands' recommended DockerWorkspace posture the
+credential-theft lever **does not work**:
+- `forward_env` default = `["DEBUG"]` → `LLM_API_KEY` is NOT in the container env.
+- persisted `api_key` is redacted (`"**********"`) in conversation state.
+- `get_secrets_as_env_vars()` injects a secret only if the command text names the key; `npm run build`
+  names nothing ⇒ no secret injected.
+
+So the build script has no credential to read in the sandbox. VULN 2 reproduces only in local/CLI mode
+where the agent env carries the key — the exact posture OpenHands documents as unsafe. **Verdict: WAI,
+not disclosable.** OpenHands' Docker credential isolation is genuinely sound here.
+
+## Hunt scoreboard (honest, after all scrutiny)
+- VULN 2 (build-script exfil, decoy + LLM-key variants): **WAI / closed** (Docker isolates creds).
+- VULN 1 (unauth agent-server RCE): **duplicate** (OpenHands #17878/#17763, PR #17768; local-no-auth documented).
+- Subsidiaries (`--llm-approve` headless bypass; insecure defaults): minor, adjacent to known, borrowed stamps.
+- Indirect prompt injection (the actual goal): **0 confirmed**.
+
+Net: no submittable CVE and no real IPI yet. What IS validated: the harness + black-box gate + review
+discipline caught false positives and killed its own WAI/dup findings instead of filing junk.
