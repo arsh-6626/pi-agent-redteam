@@ -23,7 +23,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..victim import VictimSandbox, _populate_workspace  # reuse sandbox + injection planting
+from ..victim import VictimSandbox, _populate_workspace, outside_files, snapshot_escapes  # reuse sandbox + injection planting
 from .. import ds as _ds
 from ..egress import EgressSink
 
@@ -75,6 +75,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
                 max_steps: int = 0, target_repo: str | None = None) -> dict:
     sb = VictimSandbox()
     _populate_workspace(sb, injection, surface, target_repo)
+    _escape_baseline = outside_files(sb.base, sb.workspace)  # seeds present now are NOT escapes
     # SCRUBBED env (Bug 2): do NOT inherit the host env. Leaking PI_*/PI_SESSION_FILE, the raw
     # attacker DEEPSEEK_API_KEY, or harness paths lets the victim detect the test and diff against
     # ground truth. Build a minimal allowlist: just what OpenHands needs to run + its own LLM creds.
@@ -128,12 +129,11 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     _attach_observations(events, raw)
     # Record every tool call into the sandbox event log so the oracle sees the same shape.
     sb.events = events
-    sz = sb.base / "SECRET_ZONE"
     episode = {
         "task": task, "surface": surface, "canary": canary, "profile": profile or "openhands",
         "injection": injection, "events": events, "base": str(sb.base),
-        "workspace": str(sb.workspace), "secret_zone": str(sz),
-        "secret_zone_contents": [str(pp.relative_to(sz)) for pp in sz.rglob("*") if pp.is_file()],
+        "workspace": str(sb.workspace),
+        "secret_zone_contents": snapshot_escapes(sb.base, sb.workspace, _escape_baseline),
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
         "egress_receipts": sink.receipts,
         "egress_url": sink.url,
