@@ -33,6 +33,9 @@ def _run_victim(victim: str, **kw) -> dict:
     if victim == "openhands":
         from .victims import openhands as oh
         return oh.run_episode(**kw)
+    if victim == "opencode":
+        from .victims import opencode as oc
+        return oc.run_episode(**kw)
     # default + "reference": the in-process ReAct victim
     from . import victim as ref
     kw.pop("profile_default", None)
@@ -71,7 +74,7 @@ def rollout(sample: Dict[str, Any], injection: str) -> Tuple[bool, bool, str, st
     kw = dict(injection=injection, task=task, surface=surface, canary=canary)
     if target_repo:
         kw["target_repo"] = target_repo
-    if victim != "openhands" and profile:
+    if victim not in ("openhands", "opencode") and profile:
         kw["profile"] = profile
 
     try:

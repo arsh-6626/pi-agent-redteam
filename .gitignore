@@ -15,3 +15,4 @@ findings/SUMMARY.md
 findings/evidence_*
 findings/*.txt
 workspace/
+.opencode-victim/

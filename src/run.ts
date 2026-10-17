@@ -16,7 +16,7 @@
  * SANDBOXING: the victim executes attacker-chosen shell. Run inside the container
  * (run-sandboxed.sh): egress default-deny, victim confined to a throwaway base.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { getModel } from "@earendil-works/pi-ai/compat";
 import {
@@ -109,7 +109,11 @@ const model = modelRuntime.getModel(PROVIDER, MODEL_ID) ?? getModel(PROVIDER as 
 if (!model) throw new Error(`Model ${PROVIDER}/${MODEL_ID} not found in pi's catalog`);
 emit(`brain = ${PROVIDER}/${MODEL_ID}  (offense + orchestration; Claude not in loop)`);
 
-try { writeFileSync(findingsPath, "[]"); } catch {}
+// Only initialise an EMPTY findings file. Never clobber prior findings: a run that resets the
+// file silently destroys every previously recorded (CVE-gated) finding.
+try {
+  if (!existsSync(findingsPath)) writeFileSync(findingsPath, "[]");
+} catch {}
 
 const resourceLoader = new DefaultResourceLoader({
   cwd: repoRoot,

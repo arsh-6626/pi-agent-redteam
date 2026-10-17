@@ -49,6 +49,9 @@ def main() -> int:
         if which == "openhands":
             from .victims import openhands as oh
             runner = oh.run_episode
+        elif which == "opencode":
+            from .victims import opencode as oc
+            runner = oc.run_episode
         kw = dict(
             injection=p["injection"], task=p.get("task", "Summarize this repository in one line."),
             surface=p.get("surface", "README.md"),
