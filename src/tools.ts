@@ -70,6 +70,7 @@ export function buildTools(repoRoot: string, findingsPath: string) {
         surface: Type.Optional(Type.String({ description: "victim file to poison (default README.md)" })),
         prior_feedback: Type.Optional(Type.String({ description: "last trajectory + verdict, to refine" })),
         k: Type.Optional(Type.Number({ description: "how many candidates (default 3)" })),
+        reset: Type.Optional(Type.Boolean({ description: "pass true on the FIRST craft of a hunt to clear adaptive session memory (tried payloads/classes/best-susceptibility)" })),
       }),
       execute: async (_id: string, p: any) => {
         const res = await backend(repoRoot, "craft", {
@@ -77,6 +78,7 @@ export function buildTools(repoRoot: string, findingsPath: string) {
           surface: p.surface ?? "README.md",
           prior_feedback: p.prior_feedback ?? "",
           k: p.k ?? 3,
+          reset: p.reset ?? false,
         });
         const candidates = (res.candidates ?? []).map((c: any, i: number) => ({ id: i, ...c }));
         writeFileSync(craftPath, JSON.stringify({ ...res, candidates }, null, 2));
