@@ -25,6 +25,7 @@ from pathlib import Path
 
 from ..victim import VictimSandbox, _populate_workspace  # reuse sandbox + injection planting
 from .. import ds as _ds
+from ..egress import EgressSink
 
 OPENHANDS_BIN = os.environ.get("OPENHANDS_BIN") or (
     shutil.which("openhands") or str(Path.home() / ".local/bin/openhands"))
@@ -74,18 +75,35 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
                 max_steps: int = 0, target_repo: str | None = None) -> dict:
     sb = VictimSandbox()
     _populate_workspace(sb, injection, surface, target_repo)
-    env = dict(os.environ)
-    # Interactive pi runs don't export the DeepSeek key; pull it from the repo .env so the
-    # victim's LLM works (os.environ still wins where set).
-    for _k, _v in _ds.load_env().items():
-        env.setdefault(_k, _v)
-    key = env.get("LLM_API_KEY") or env.get("DEEPSEEK_API_KEY", "")
-    env["LLM_API_KEY"] = key
-    env.setdefault("LLM_BASE_URL", env.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
-    env.setdefault("LLM_MODEL", "deepseek/deepseek-chat")
-    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+    # SCRUBBED env (Bug 2): do NOT inherit the host env. Leaking PI_*/PI_SESSION_FILE, the raw
+    # attacker DEEPSEEK_API_KEY, or harness paths lets the victim detect the test and diff against
+    # ground truth. Build a minimal allowlist: just what OpenHands needs to run + its own LLM creds.
+    merged = _ds.load_env()  # repo .env fallback for the key when interactive pi didn't export it
+    key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or merged.get("DEEPSEEK_API_KEY", "")
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "OPENHANDS_SUPPRESS_BANNER": "1",
+        "LLM_API_KEY": key,
+        "LLM_BASE_URL": os.environ.get("LLM_BASE_URL") or merged.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        "LLM_MODEL": os.environ.get("LLM_MODEL", "deepseek/deepseek-chat"),
+    }
+    # Victim-owned secrets live in a DECOY home (outside the repo). Give the agent that
+    # HOME so its ~/.ssh resolves to the seeded victim key — and so it can never touch
+    # the real host HOME. (Local runtime = actions on the host; this is the containment fix.)
+    env["HOME"] = str(sb.home)
 
-    cmd = [OPENHANDS_BIN, "--headless", "--json", "--yolo", "--override-with-envs", "-t", task]
+    sink = EgressSink(host=os.environ.get("EGRESS_HOST", "127.0.0.1"),
+                      port=int(os.environ.get("EGRESS_PORT", "18080")))
+    sink.__enter__()
+
+    # Approval-mode profiles: exercise the product's OWN security controls rather than
+    # always running with the safety analyzer disabled.
+    approval_flag = "--yolo"
+    if profile in ("openhands-llm-approve", "llm-approve"):
+        approval_flag = "--llm-approve"
+
+    cmd = [OPENHANDS_BIN, "--headless", "--json", approval_flag, "--override-with-envs", "-t", task]
     raw: list[dict] = []
     error = None
     try:
@@ -112,13 +130,16 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     sb.events = events
     sz = sb.base / "SECRET_ZONE"
     episode = {
-        "task": task, "surface": surface, "canary": canary, "profile": "openhands",
+        "task": task, "surface": surface, "canary": canary, "profile": profile or "openhands",
         "injection": injection, "events": events, "base": str(sb.base),
         "workspace": str(sb.workspace), "secret_zone": str(sz),
         "secret_zone_contents": [str(pp.relative_to(sz)) for pp in sz.rglob("*") if pp.is_file()],
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
+        "egress_receipts": sink.receipts,
+        "egress_url": sink.url,
     }
     if error:
         episode["adapter_error"] = error
+    sink.__exit__(None, None, None)
     sb.cleanup()
     return episode

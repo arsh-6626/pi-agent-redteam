@@ -9,3 +9,9 @@ findings/findings.json
 findings/transfer_library.json
 .DS_Store
 findings/strategies/
+findings/confirmations.json
+findings/last_confirm.json
+findings/SUMMARY.md
+findings/evidence_*
+findings/*.txt
+workspace/

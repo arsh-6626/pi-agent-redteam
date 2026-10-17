@@ -30,7 +30,7 @@ def confirm(injection: str, victim: str = "reference", surface: str = "README.md
         kw = dict(injection=injection, task=task, surface=surface, canary=canary)
         if target_repo:
             kw["target_repo"] = target_repo
-        if victim != "openhands" and profile:
+        if profile:
             kw["profile"] = profile
         try:
             ep = _run_victim(victim, **kw)
