@@ -16,3 +16,5 @@ findings/evidence_*
 findings/*.txt
 workspace/
 .opencode-victim/
+findings/selftest.json
+findings/attack_session.json

@@ -29,6 +29,18 @@ def _out(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj))
 
 
+def _stamp_validation(d: dict) -> None:
+    """Stamp a PIPELINE UNVALIDATED banner onto craft/deliver/oracle results until the positive
+    control (rt_selftest) passes (improvement.md §2.1). A null result is not interpretable without it."""
+    try:
+        from . import selftest
+        w = selftest.warning()
+    except Exception:  # noqa: BLE001
+        w = ""
+    if w and isinstance(d, dict):
+        d["pipeline_unvalidated"] = w
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         _out({"error": "usage: pi_backend <cmd> '<json>'"})
@@ -38,10 +50,16 @@ def main() -> int:
 
     if cmd == "craft":
         canary = p.get("canary") or ("RTX" + secrets.token_hex(3))
-        _out(craft_mod.craft(
+        res = craft_mod.craft(
             goal=p.get("goal", "cmd_exec"), surface=p.get("surface", "README.md"),
             canary=canary, prior_feedback=p.get("prior_feedback", ""), k=int(p.get("k", 3)),
-            reset=bool(p.get("reset", False))))
+            reset=bool(p.get("reset", False)))
+        _stamp_validation(res)
+        _out(res)
+    elif cmd == "selftest":
+        from . import selftest
+        _out(selftest.run(victim=p.get("victim", "reference"), profile=p.get("profile", "naive"),
+                          rounds=int(p.get("rounds", 3)), target_repo=p.get("target_repo", "")))
     elif cmd == "deliver":
         # victim adapter selection: "reference" (default, in-process ReAct) or "openhands".
         which = p.get("victim", "reference")
@@ -60,6 +78,7 @@ def main() -> int:
         if p.get("target_repo"):
             kw["target_repo"] = p["target_repo"]
         ep = runner(**kw)
+        _stamp_validation(ep)
         _out(ep)
     elif cmd == "oracle":
         # Prefer an episode_path (avoids passing a multi-MB episode as an argv string -> E2BIG).
@@ -90,6 +109,7 @@ def main() -> int:
             session.record_result(susc, hint.split("\n")[1] if "\n" in hint else hint[:160])
         else:
             session.record_result(1.0, "")
+        _stamp_validation(v)
         _out(v)
     elif cmd == "confirm":
         from . import confirm as confirm_mod
