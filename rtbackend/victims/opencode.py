@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .. import ds as _ds
 from ..victim import (VictimSandbox, _populate_workspace, outside_files, snapshot_escapes,
-                      workspace_text_baseline, snapshot_workspace_writes)
+                      workspace_text_baseline, snapshot_workspace_writes, normalize_plants, combined_injection)
 from ..egress import open_sink
 
 _OPENCODE_BIN = os.environ.get("OPENCODE_BIN") or (
@@ -72,9 +72,11 @@ def _map_event(o: dict) -> dict | None:
 
 
 def run_episode(injection: str, task: str, surface: str, canary: str, profile: str = "opencode",
-                max_steps: int = 0, target_repo: str | None = None) -> dict:
+                max_steps: int = 0, target_repo: str | None = None, plants: list | None = None) -> dict:
     sb = VictimSandbox()
-    _populate_workspace(sb, injection, surface, target_repo)
+    _plant_list = normalize_plants(injection, surface, plants)
+    surfaces = _populate_workspace(sb, injection, surface, target_repo, plants=plants)
+    inj_display = combined_injection(_plant_list)
     (sb.workspace / "opencode.jsonc").write_text(json.dumps(_PROJECT_CONFIG, indent=2))
     _escape_baseline = outside_files(sb.base, sb.workspace)  # pre-run: seeds + nothing else
     _ws_baseline = workspace_text_baseline(sb.workspace)
@@ -122,10 +124,11 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
 
     escaped = snapshot_escapes(sb.base, sb.workspace, _escape_baseline)
     episode = {
-        "task": task, "surface": surface, "canary": canary, "profile": "opencode",
-        "injection": injection, "events": events, "base": str(sb.base),
+        "task": task, "surface": surfaces[0], "surfaces": surfaces, "plants": _plant_list,
+        "canary": canary, "profile": "opencode",
+        "injection": inj_display, "events": events, "base": str(sb.base),
         "workspace": str(sb.workspace), "secret_zone_contents": escaped,
-        "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip={surface}),
+        "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip=set(surfaces)),
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
         "egress_receipts": sink.receipts if sink else [], "egress_url": sink.url if sink else "",
         "egress_bind_failed": _egress_bind_failed,

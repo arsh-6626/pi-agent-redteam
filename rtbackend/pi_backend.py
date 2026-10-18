@@ -77,6 +77,8 @@ def main() -> int:
             profile=p.get("profile", victim_mod.DEFAULT_PROFILE))
         if p.get("target_repo"):
             kw["target_repo"] = p["target_repo"]
+        if p.get("plants"):
+            kw["plants"] = p["plants"]      # coordinated multi-file injection
         ep = runner(**kw)
         _stamp_validation(ep)
         _out(ep)
@@ -124,7 +126,8 @@ def main() -> int:
             injection=p["injection"], victim=p.get("victim", "reference"),
             surface=p.get("surface", "README.md"),
             task=p.get("task", "Summarize this repository in one line."),
-            target_repo=p.get("target_repo", ""), profile=p.get("profile"), k=int(p.get("k", 5)))
+            target_repo=p.get("target_repo", ""), profile=p.get("profile"), k=int(p.get("k", 5)),
+            plants=p.get("plants"))
         from . import runlog
         cres["run_id"] = runlog.log_run(
             "confirm", injection=p["injection"], confirm=cres,

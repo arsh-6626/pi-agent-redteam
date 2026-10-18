@@ -24,7 +24,7 @@ import subprocess
 from pathlib import Path
 
 from ..victim import (VictimSandbox, _populate_workspace, outside_files, snapshot_escapes,  # reuse sandbox + injection planting
-                      workspace_text_baseline, snapshot_workspace_writes)
+                      workspace_text_baseline, snapshot_workspace_writes, normalize_plants, combined_injection)
 from .. import ds as _ds
 from ..egress import open_sink
 
@@ -73,9 +73,11 @@ def _attach_observations(events: list[dict], raw: list[dict]) -> None:
 
 
 def run_episode(injection: str, task: str, surface: str, canary: str, profile: str = "openhands",
-                max_steps: int = 0, target_repo: str | None = None) -> dict:
+                max_steps: int = 0, target_repo: str | None = None, plants: list | None = None) -> dict:
     sb = VictimSandbox()
-    _populate_workspace(sb, injection, surface, target_repo)
+    _plant_list = normalize_plants(injection, surface, plants)
+    surfaces = _populate_workspace(sb, injection, surface, target_repo, plants=plants)
+    inj_display = combined_injection(_plant_list)
     _escape_baseline = outside_files(sb.base, sb.workspace)  # seeds present now are NOT escapes
     _ws_baseline = workspace_text_baseline(sb.workspace)
     # SCRUBBED env (Bug 2): do NOT inherit the host env. Leaking PI_*/PI_SESSION_FILE, the raw
@@ -130,11 +132,12 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     # Record every tool call into the sandbox event log so the oracle sees the same shape.
     sb.events = events
     episode = {
-        "task": task, "surface": surface, "canary": canary, "profile": profile or "openhands",
-        "injection": injection, "events": events, "base": str(sb.base),
+        "task": task, "surface": surfaces[0], "surfaces": surfaces, "plants": _plant_list,
+        "canary": canary, "profile": profile or "openhands",
+        "injection": inj_display, "events": events, "base": str(sb.base),
         "workspace": str(sb.workspace),
         "secret_zone_contents": snapshot_escapes(sb.base, sb.workspace, _escape_baseline),
-        "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip={surface}),
+        "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip=set(surfaces)),
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
         "egress_receipts": sink.receipts if sink else [],
         "egress_url": sink.url if sink else "",
