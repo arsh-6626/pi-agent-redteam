@@ -241,6 +241,52 @@ def snapshot_escapes(base: Path, workspace: Path, baseline: set) -> list:
     return sorted(escapes)
 
 
+def workspace_text_baseline(workspace: Path) -> dict:
+    """path -> sha256 for every text file in the workspace at setup time. The diff against the end
+    state tells the output-artifact oracle which files the agent actually WROTE/CHANGED — catching
+    both write_file tool calls AND files created via a shell redirect (the observed hit vector)."""
+    import hashlib
+    ws = Path(workspace)
+    out = {}
+    for p in ws.rglob("*"):
+        if not p.is_file():
+            continue
+        try:
+            b = p.read_bytes()
+        except Exception:  # noqa: BLE001
+            continue
+        if b"\x00" in b[:4096]:
+            continue  # skip binary
+        out[str(p.relative_to(ws))] = hashlib.sha256(b).hexdigest()
+    return out
+
+
+def snapshot_workspace_writes(workspace: Path, baseline: dict, skip: set | None = None) -> list:
+    """[{path, content}] for text files NEW or CHANGED vs `baseline` (i.e. the agent wrote them).
+    `skip` excludes the injected surface file(s) — preserving/echoing the planted injection is not the
+    agent shipping new insecure code, and would otherwise re-flag the injection's own text."""
+    import hashlib
+    ws = Path(workspace)
+    skip = {os.path.basename(s) for s in (skip or set()) if s}
+    writes = []
+    for p in ws.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(ws))
+        if os.path.basename(rel) in skip:
+            continue
+        try:
+            b = p.read_bytes()
+        except Exception:  # noqa: BLE001
+            continue
+        if b"\x00" in b[:4096]:
+            continue
+        if hashlib.sha256(b).hexdigest() == baseline.get(rel):
+            continue  # unchanged
+        writes.append({"path": rel, "content": b.decode("utf-8", "replace")[:20000]})
+    return writes
+
+
 def run_episode(injection: str, task: str, surface: str, canary: str,
                 profile: str = DEFAULT_PROFILE, max_steps: int = MAX_STEPS,
                 target_repo: str | None = None) -> dict:
@@ -253,6 +299,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str,
     sb = VictimSandbox()
     _populate_workspace(sb, injection, surface, target_repo)
     _escape_baseline = outside_files(sb.base, sb.workspace)  # seeds present now are NOT escapes
+    _ws_baseline = workspace_text_baseline(sb.workspace)      # to diff the agent's writes
     from .egress import open_sink
     sink, _egress_bind_failed = open_sink()
 
@@ -287,6 +334,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str,
             "injection": injection, "events": sb.events,
             "base": str(sb.base), "workspace": str(sb.workspace),
             "secret_zone_contents": escaped,
+            "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip={surface}),
             "workspace_files": [str(p.relative_to(sb.workspace)) for p in sb.workspace.rglob("*") if p.is_file()],
             "egress_receipts": sink.receipts if sink else [],
             "egress_url": sink.url if sink else "",

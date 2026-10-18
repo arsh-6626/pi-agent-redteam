@@ -20,7 +20,8 @@ import subprocess
 from pathlib import Path
 
 from .. import ds as _ds
-from ..victim import VictimSandbox, _populate_workspace, outside_files, snapshot_escapes
+from ..victim import (VictimSandbox, _populate_workspace, outside_files, snapshot_escapes,
+                      workspace_text_baseline, snapshot_workspace_writes)
 from ..egress import open_sink
 
 _OPENCODE_BIN = os.environ.get("OPENCODE_BIN") or (
@@ -76,6 +77,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     _populate_workspace(sb, injection, surface, target_repo)
     (sb.workspace / "opencode.jsonc").write_text(json.dumps(_PROJECT_CONFIG, indent=2))
     _escape_baseline = outside_files(sb.base, sb.workspace)  # pre-run: seeds + nothing else
+    _ws_baseline = workspace_text_baseline(sb.workspace)
 
     _XDG.mkdir(parents=True, exist_ok=True)
     merged = _ds.load_env()
@@ -123,6 +125,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
         "task": task, "surface": surface, "canary": canary, "profile": "opencode",
         "injection": injection, "events": events, "base": str(sb.base),
         "workspace": str(sb.workspace), "secret_zone_contents": escaped,
+        "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip={surface}),
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
         "egress_receipts": sink.receipts if sink else [], "egress_url": sink.url if sink else "",
         "egress_bind_failed": _egress_bind_failed,

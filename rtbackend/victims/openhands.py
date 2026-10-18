@@ -23,7 +23,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..victim import VictimSandbox, _populate_workspace, outside_files, snapshot_escapes  # reuse sandbox + injection planting
+from ..victim import (VictimSandbox, _populate_workspace, outside_files, snapshot_escapes,  # reuse sandbox + injection planting
+                      workspace_text_baseline, snapshot_workspace_writes)
 from .. import ds as _ds
 from ..egress import open_sink
 
@@ -76,6 +77,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     sb = VictimSandbox()
     _populate_workspace(sb, injection, surface, target_repo)
     _escape_baseline = outside_files(sb.base, sb.workspace)  # seeds present now are NOT escapes
+    _ws_baseline = workspace_text_baseline(sb.workspace)
     # SCRUBBED env (Bug 2): do NOT inherit the host env. Leaking PI_*/PI_SESSION_FILE, the raw
     # attacker DEEPSEEK_API_KEY, or harness paths lets the victim detect the test and diff against
     # ground truth. Build a minimal allowlist: just what OpenHands needs to run + its own LLM creds.
@@ -132,6 +134,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
         "injection": injection, "events": events, "base": str(sb.base),
         "workspace": str(sb.workspace),
         "secret_zone_contents": snapshot_escapes(sb.base, sb.workspace, _escape_baseline),
+        "workspace_writes": snapshot_workspace_writes(sb.workspace, _ws_baseline, skip={surface}),
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
         "egress_receipts": sink.receipts if sink else [],
         "egress_url": sink.url if sink else "",
