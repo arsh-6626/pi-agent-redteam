@@ -80,7 +80,11 @@ def main() -> int:
             susc = score.susceptibility(ep).get("score", 0.0)
         except Exception:  # noqa: BLE001
             susc = 1.0 if v.get("harmed") else 0.0
-        if not v.get("harmed"):
+        if v.get("verdict") == "INVALID":
+            # Not interpretable — NOT a clean "held". No refine hint (nothing to refine) and no
+            # susceptibility recording (an untested/failed episode is not a defence signal).
+            v["note"] = "INVALID — episode not interpretable; re-run after fixing the listed reasons."
+        elif not v.get("harmed"):
             hint = refine.diagnose(ep)
             v["refine_hint"] = hint
             session.record_result(susc, hint.split("\n")[1] if "\n" in hint else hint[:160])

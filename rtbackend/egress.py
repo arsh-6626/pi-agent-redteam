@@ -10,6 +10,7 @@ network-confirmed HARM (class "exfiltration").
 """
 from __future__ import annotations
 
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -81,3 +82,20 @@ class EgressSink:
         # From inside a Docker sandbox the host is reached via the bridge gateway;
         # the local (non-Docker) path uses loopback. Callers pass the right host.
         return f"http://{self.host}:{self.port}"
+
+
+def open_sink(host: str | None = None, port: int | None = None):
+    """Start an EgressSink, or report a bind failure instead of crashing the episode.
+
+    Returns (sink_or_None, bind_failed_bool). A bind failure (port occupied by a stale listener)
+    used to make every episode look CLEAN; now the caller stamps episode["egress_bind_failed"] so
+    the tri-state oracle marks the episode INVALID (not interpretable), never a clean "held".
+    """
+    host = host or os.environ.get("EGRESS_HOST", "127.0.0.1")
+    port = int(port if port is not None else os.environ.get("EGRESS_PORT", "18080"))
+    try:
+        sink = EgressSink(host=host, port=port)
+        sink.__enter__()
+        return sink, False
+    except Exception:  # noqa: BLE001 — RuntimeError on bind failure, or any listener error
+        return None, True

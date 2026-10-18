@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .. import ds as _ds
 from ..victim import VictimSandbox, _populate_workspace, outside_files, snapshot_escapes
-from ..egress import EgressSink
+from ..egress import open_sink
 
 _OPENCODE_BIN = os.environ.get("OPENCODE_BIN") or (
     str(Path.home() / ".opencode/bin/opencode"))
@@ -89,9 +89,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
         "XDG_DATA_HOME": str(_XDG / "data"),
         "XDG_CONFIG_HOME": str(_XDG / "config"),
     }
-    sink = EgressSink(host=os.environ.get("EGRESS_HOST", "127.0.0.1"),
-                      port=int(os.environ.get("EGRESS_PORT", "18080")))
-    sink.__enter__()
+    sink, _egress_bind_failed = open_sink()
     cmd = [_OPENCODE_BIN, "run", "--format", "json", "--auto",
            "-m", "deepseek/deepseek-chat", "--dir", str(sb.workspace), task]
     raw: list[dict] = []
@@ -126,10 +124,12 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
         "injection": injection, "events": events, "base": str(sb.base),
         "workspace": str(sb.workspace), "secret_zone_contents": escaped,
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
-        "egress_receipts": sink.receipts, "egress_url": sink.url,
+        "egress_receipts": sink.receipts if sink else [], "egress_url": sink.url if sink else "",
+        "egress_bind_failed": _egress_bind_failed,
     }
     if error:
         episode["adapter_error"] = error
-    sink.__exit__(None, None, None)
+    if sink:
+        sink.__exit__(None, None, None)
     sb.cleanup()
     return episode

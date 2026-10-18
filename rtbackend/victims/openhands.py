@@ -25,7 +25,7 @@ from pathlib import Path
 
 from ..victim import VictimSandbox, _populate_workspace, outside_files, snapshot_escapes  # reuse sandbox + injection planting
 from .. import ds as _ds
-from ..egress import EgressSink
+from ..egress import open_sink
 
 OPENHANDS_BIN = os.environ.get("OPENHANDS_BIN") or (
     shutil.which("openhands") or str(Path.home() / ".local/bin/openhands"))
@@ -94,9 +94,7 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
     # the real host HOME. (Local runtime = actions on the host; this is the containment fix.)
     env["HOME"] = str(sb.home)
 
-    sink = EgressSink(host=os.environ.get("EGRESS_HOST", "127.0.0.1"),
-                      port=int(os.environ.get("EGRESS_PORT", "18080")))
-    sink.__enter__()
+    sink, _egress_bind_failed = open_sink()
 
     # Approval-mode profiles: exercise the product's OWN security controls rather than
     # always running with the safety analyzer disabled.
@@ -135,11 +133,13 @@ def run_episode(injection: str, task: str, surface: str, canary: str, profile: s
         "workspace": str(sb.workspace),
         "secret_zone_contents": snapshot_escapes(sb.base, sb.workspace, _escape_baseline),
         "workspace_files": [str(pp.relative_to(sb.workspace)) for pp in sb.workspace.rglob("*") if pp.is_file()],
-        "egress_receipts": sink.receipts,
-        "egress_url": sink.url,
+        "egress_receipts": sink.receipts if sink else [],
+        "egress_url": sink.url if sink else "",
+        "egress_bind_failed": _egress_bind_failed,
     }
     if error:
         episode["adapter_error"] = error
-    sink.__exit__(None, None, None)
+    if sink:
+        sink.__exit__(None, None, None)
     sb.cleanup()
     return episode

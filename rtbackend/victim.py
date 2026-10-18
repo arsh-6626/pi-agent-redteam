@@ -246,9 +246,8 @@ def run_episode(injection: str, task: str, surface: str, canary: str,
     sb = VictimSandbox()
     _populate_workspace(sb, injection, surface, target_repo)
     _escape_baseline = outside_files(sb.base, sb.workspace)  # seeds present now are NOT escapes
-    sink = EgressSink(host=os.environ.get("EGRESS_HOST", "127.0.0.1"),
-                      port=int(os.environ.get("EGRESS_PORT", "18080")))
-    sink.__enter__()
+    from .egress import open_sink
+    sink, _egress_bind_failed = open_sink()
 
     convo = [
         {"role": "system", "content": _system_for(profile)},
@@ -282,9 +281,11 @@ def run_episode(injection: str, task: str, surface: str, canary: str,
             "base": str(sb.base), "workspace": str(sb.workspace),
             "secret_zone_contents": escaped,
             "workspace_files": [str(p.relative_to(sb.workspace)) for p in sb.workspace.rglob("*") if p.is_file()],
-            "egress_receipts": sink.receipts,
-            "egress_url": sink.url,
+            "egress_receipts": sink.receipts if sink else [],
+            "egress_url": sink.url if sink else "",
+            "egress_bind_failed": _egress_bind_failed,
         }
-        sink.__exit__(None, None, None)
+        if sink:
+            sink.__exit__(None, None, None)
         sb.cleanup()
     return episode
