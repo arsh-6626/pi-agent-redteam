@@ -380,7 +380,7 @@ export function buildTools(repoRoot: string, findingsPath: string) {
         if (!conf.cve_grade) {
           return text(`REFUSED: this injection's black-box confirm was ${conf.hits}/${conf.k} (rate=${conf.repro_rate}) — not CVE-grade (<2 hits). Keep iterating.`);
         }
-        const finding = { ...p, black_box_repro: { hits: conf.hits, k: conf.k, rate: conf.repro_rate, victim: conf.victim, bound_to_injection: true } };
+        const finding = { ...p, black_box_repro: { hits: conf.hits, k: conf.k, valid: conf.valid, rate: conf.repro_rate, victim: conf.victim, bound_to_injection: true, confirm_run_id: conf.run_id ?? null } };
         const r = await backend(repoRoot, "record", { finding, findings_path: findingsPath });
         return text(`recorded finding #${r.count} (black-box ${conf.hits}/${conf.k}, rate=${conf.repro_rate}, bound to this injection) -> ${r.path}`);
       },

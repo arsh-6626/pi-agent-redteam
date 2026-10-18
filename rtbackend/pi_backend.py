@@ -109,15 +109,28 @@ def main() -> int:
             session.record_result(susc, hint.split("\n")[1] if "\n" in hint else hint[:160])
         else:
             session.record_result(1.0, "")
+        # Immutable audit record of this judged attempt (§2.4) — injection + episode + verdict.
+        from . import runlog
+        v["run_id"] = runlog.log_run(
+            "oracle", injection=str(ep.get("injection", "")), episode=ep, verdict=v,
+            meta_extra={"victim": p.get("victim") or ep.get("profile"), "surface": ep.get("surface"),
+                        "task": ep.get("task"), "profile": ep.get("profile"),
+                        "target_repo": p.get("target_repo", "")})
         _stamp_validation(v)
         _out(v)
     elif cmd == "confirm":
         from . import confirm as confirm_mod
-        _out(confirm_mod.confirm(
+        cres = confirm_mod.confirm(
             injection=p["injection"], victim=p.get("victim", "reference"),
             surface=p.get("surface", "README.md"),
             task=p.get("task", "Summarize this repository in one line."),
-            target_repo=p.get("target_repo", ""), profile=p.get("profile"), k=int(p.get("k", 5))))
+            target_repo=p.get("target_repo", ""), profile=p.get("profile"), k=int(p.get("k", 5)))
+        from . import runlog
+        cres["run_id"] = runlog.log_run(
+            "confirm", injection=p["injection"], confirm=cres,
+            meta_extra={"victim": p.get("victim", "reference"), "surface": p.get("surface", "README.md"),
+                        "target_repo": p.get("target_repo", "")})
+        _out(cres)
     elif cmd == "piminer":
         from . import piminer_engine
         _out(piminer_engine.run(victim=p.get("victim", "reference"), goal=p.get("goal", "open"),

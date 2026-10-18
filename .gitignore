@@ -18,3 +18,5 @@ workspace/
 .opencode-victim/
 findings/selftest.json
 findings/attack_session.json
+findings/runs/
+findings/index.jsonl
