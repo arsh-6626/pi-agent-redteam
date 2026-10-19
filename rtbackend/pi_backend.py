@@ -138,7 +138,8 @@ def main() -> int:
         from . import piminer_engine
         _out(piminer_engine.run(victim=p.get("victim", "reference"), goal=p.get("goal", "open"),
                                 surface=p.get("surface", "README.md"), target_repo=p.get("target_repo", ""),
-                                rounds=int(p.get("rounds", 2))))
+                                rounds=int(p.get("rounds", 2)), task=p.get("task", ""),
+                                dataset=p.get("dataset", "live_agent"), suites=p.get("suites", "")))
     elif cmd == "route":
         from . import strategy
         _out(strategy.route(goal=p.get("goal", "open"), surface=p.get("surface", "README.md"),
@@ -166,6 +167,31 @@ def main() -> int:
         cur.append(p.get("finding", {}))
         fp.write_text(json.dumps(cur, indent=2))
         _out({"recorded": True, "count": len(cur), "path": str(fp)})
+    elif cmd == "srcrecon":
+        # Grey-box Tier 3: scan the TARGET's source for dangerous sinks (code-exec / deser / SSTI / …)
+        # reachable from agent-controllable input, ranked. Pure static — needs no brain.
+        from . import srcrecon
+        classes = p.get("classes")  # optional filter, e.g. ["code-exec","deserialization"]
+        sinks = srcrecon.top(p["repo"], int(p.get("n", 20)))
+        if classes:
+            sinks = [s for s in sinks if s["cls"] in classes]
+        _out({"repo": p["repo"], "count": len(sinks), "sinks": sinks})
+    elif cmd == "craft_sink":
+        # Craft an injection aimed at a SPECIFIC ranked sink (brain-crafted if a key is configured).
+        from . import srcrecon
+        ranked = srcrecon.top(p["repo"], int(p.get("n", 40)))
+        if p.get("classes"):
+            ranked = [s for s in ranked if s["cls"] in p["classes"]]
+        if not ranked:
+            _out({"error": "no sinks found for the given repo/classes"})
+            return 0
+        sink = ranked[int(p.get("rank", 0))]
+        canary = p.get("canary") or ("RTX" + secrets.token_hex(3))
+        res = srcrecon.craft_for_sink(sink, p.get("goal", "open"), canary,
+                                      p.get("surface", "a file / input the agent ingests"))
+        res["sink_detail"] = sink
+        res["canary"] = canary
+        _out(res)
     else:
         _out({"error": f"unknown cmd {cmd}"})
         return 2
