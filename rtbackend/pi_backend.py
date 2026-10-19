@@ -93,7 +93,7 @@ def main() -> int:
         if p.get("oracle") == "fixed":
             v = oracle_mod.judge(ep)
         else:
-            v = judge_open.judge(ep, use_llm=p.get("use_llm", True))
+            v = judge_open.judge(ep, use_llm=p.get("use_llm", True), target=p.get("target"))
         from . import refine, score, session
         # Hill-climb signal (#6): record how far this attempt got + the defense observed, so the
         # next craft beats it and the attacker stops repeating classes that already failed.
