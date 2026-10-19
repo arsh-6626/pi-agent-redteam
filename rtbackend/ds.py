@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -40,15 +41,31 @@ def load_env() -> dict:
     return {**fallback, **repo}
 
 
+# Model-name fragments that indicate a REASONING model (needs reasoning_effort + a bigger
+# token budget). Non-reasoning models (e.g. Groq's llama-3.3) REJECT reasoning_effort with a 400.
+_REASONING_HINTS = ("reason", "-r1", "r1-", "flash", "gpt-oss", "qwen3", "o1", "o3", "thinking", "deepthink")
+
+
 def load_key() -> tuple[str, str, str]:
     repo = _load_env_file(_REPO_ENV)
     fallback = _load_env_file(_PIMINER_ENV)
     # repo .env wins over the PIMiner fallback; os.environ wins over both.
     env = {**fallback, **repo}
-    key = os.environ.get("DEEPSEEK_API_KEY") or env.get("DEEPSEEK_API_KEY", "")
-    base = (os.environ.get("DEEPSEEK_BASE_URL") or env.get("DEEPSEEK_BASE_URL")
-            or "https://api.deepseek.com").rstrip("/")
-    model = os.environ.get("DEEPSEEK_MODEL") or env.get("DEEPSEEK_MODEL", "deepseek-flash")
+
+    def g(k: str) -> str:
+        return os.environ.get(k) or env.get(k, "")
+
+    # Provider switch: a Groq free key (or any RT_LLM_* override) takes precedence over DeepSeek,
+    # so the brain keeps working when the DeepSeek balance is exhausted. All are OpenAI-compatible.
+    if g("RT_LLM_KEY"):
+        return g("RT_LLM_KEY"), (g("RT_LLM_BASE_URL") or "https://api.groq.com/openai/v1").rstrip("/"), \
+            (g("RT_LLM_MODEL") or "llama-3.3-70b-versatile")
+    if g("GROQ_API_KEY"):
+        return g("GROQ_API_KEY"), (g("GROQ_BASE_URL") or "https://api.groq.com/openai/v1").rstrip("/"), \
+            (g("GROQ_MODEL") or "llama-3.3-70b-versatile")
+    key = g("DEEPSEEK_API_KEY")
+    base = (g("DEEPSEEK_BASE_URL") or "https://api.deepseek.com").rstrip("/")
+    model = g("DEEPSEEK_MODEL") or "deepseek-flash"
     return key, base, model
 
 
@@ -59,21 +76,26 @@ def chat(messages: list[dict], *, max_tokens: int = 1200, temperature: float = 0
     # "length"). reasoning_effort="low" curbs the thinking; max_tokens still covers both.
     key, base, model = load_key()
     if not key:
-        raise SystemExit("no DEEPSEEK_API_KEY (env or PIMiner/.env)")
+        raise SystemExit("no LLM key — set GROQ_API_KEY (or DEEPSEEK_API_KEY) in env or .env")
+    is_reasoning = any(h in model.lower() for h in _REASONING_HINTS)
     # Up to 2 attempts: if reasoning ate the whole budget (finish_reason "length", empty
     # content), retry once with double the token budget so `content` has room.
     for attempt in range(2):
-        body = json.dumps({
-            "model": model, "messages": messages,
-            "temperature": temperature, "max_tokens": max_tokens,
-            "reasoning_effort": reasoning_effort,
-        }).encode()
+        payload = {"model": model, "messages": messages,
+                   "temperature": temperature, "max_tokens": max_tokens}
+        # reasoning_effort is only valid for reasoning models; non-reasoning (Groq llama) 400 on it.
+        if is_reasoning:
+            payload["reasoning_effort"] = reasoning_effort
         req = urllib.request.Request(
-            f"{base}/chat/completions", data=body, method="POST",
+            f"{base}/chat/completions", data=json.dumps(payload).encode(), method="POST",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         )
-        with urllib.request.urlopen(req, timeout=180) as r:
-            ch = json.loads(r.read())["choices"][0]
+        try:
+            with urllib.request.urlopen(req, timeout=180) as r:
+                ch = json.loads(r.read())["choices"][0]
+        except urllib.error.HTTPError as e:  # surface the provider's error body (bad model, 402, etc.)
+            detail = e.read().decode("utf-8", "replace")[:300]
+            raise SystemExit(f"LLM {e.code} from {base} (model={model}): {detail}") from e
         content = (ch.get("message", {}).get("content") or "").strip()
         if content or ch.get("finish_reason") != "length":
             return content
